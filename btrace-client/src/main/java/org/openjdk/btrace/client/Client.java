@@ -209,6 +209,8 @@ public class Client {
       classPath += File.pathSeparator + System.getProperty("java.class.path");
       if (debug) {
         debugPrint("compiling " + fileName);
+        debugPrint("includePath " + includePath);
+        debugPrint("classPath " + classPath);
       }
       Map<String, byte[]> classes = compiler.compile(file, err, ".", classPath);
       if (classes == null) {

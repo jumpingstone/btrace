@@ -31,4 +31,24 @@ public class JfrEventsTest {
     }
     System.out.println(data);
   }
+
+  @Test
+  public void testCompileWithPool() throws Exception {
+    URL input = JfrEventsTest.class.getResource("/TraceDBPool.java");
+    File inputFile = new File(input.toURI());
+    Map<String, byte[]> data =
+            new Compiler(true)
+                    .compile(
+                            inputFile,
+                            new PrintWriter(System.err),
+                            null,
+                            System.getProperty("java.class.path"));
+    BTraceProbeFactory factory = new BTraceProbeFactory(SharedSettings.GLOBAL);
+    for (byte[] bytes : data.values()) {
+      BTraceProbe probe = factory.createProbe(bytes);
+      byte[] code = probe.getDataHolderBytecode();
+      CheckClassAdapter.verify(new ClassReader(code), true, new PrintWriter(System.err));
+    }
+    System.out.println(data);
+  }
 }

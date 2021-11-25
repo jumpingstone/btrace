@@ -31,6 +31,8 @@ import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -65,6 +67,7 @@ import org.openjdk.btrace.core.types.AnyType;
 public class BTraceUtils {
   // standard stack depth decrement for figuring out the caller class calls
   private static final int STACK_DEC = 2;
+  private static Object[] EMPTYARRAY = new Object[0];
 
   static {
     BTraceRuntime.initUnsafe();
@@ -75,6 +78,13 @@ public class BTraceUtils {
 
   // Thread and stack access
 
+  public static String getHikariPoolState(Object hikariPool) {
+    return String.format("pool stats (total=%d, active=%d, idle=%d, waiting=%d)",
+            callMethod(hikariPool, "getTotalConnections", EMPTYARRAY),
+            callMethod(hikariPool, "getActiveConnections", EMPTYARRAY),
+            callMethod(hikariPool, "getIdleConnections", EMPTYARRAY),
+            callMethod(hikariPool, "getThreadsAwaitingConnection", EMPTYARRAY));
+  }
   /**
    * Tests whether this thread has been interrupted. The <i>interrupted status</i> of the thread is
    * unaffected by this method.
@@ -550,6 +560,25 @@ public class BTraceUtils {
     return Reflective.field(clazz, name);
   }
 
+  private static Object callMethod(Object object, String methodName, Object[] args) {
+    Method method = method(object.getClass(), methodName);
+    if (method != null) {
+      try {
+        return method.invoke(object, args);
+      } catch (IllegalAccessException e) {
+        println("failed to call method : " + object);
+      } catch (InvocationTargetException e) {
+        println("failed to call method : " + object);
+      }
+    } else {
+      throw new IllegalArgumentException("no such method");
+    }
+    return null;
+  }
+
+  private static Method method(Class<?> clazz, String name) {
+    return Reflective.method(clazz, name);
+  }
   /**
    * Returns a <code>Field</code> object that reflects the specified declared field of the class or
    * interface represented by the given <code>Class</code> object. The <code>name</code> parameter
@@ -3049,6 +3078,35 @@ public class BTraceUtils {
             });
   }
 
+  private static Method getMethod(Class<?> clazz, String name, boolean throwError) {
+    return AccessController.doPrivileged(
+            (PrivilegedAction<Method>)
+                    () -> {
+                      try {
+                        Method[] methods = clazz.getMethods();
+                        return findMethodByName(methods, name);
+                      } catch (Exception exp) {
+                        if (throwError) {
+                          throw translate(exp);
+                        } else {
+                          return null;
+                        }
+                      }
+                    });
+  }
+
+  private static Method findMethodByName(Method[] methods, String name) {
+    Method target = null;
+    for(Method method : methods) {
+      if (method.getName().equals(name)) {
+        if (target == null) {
+          target = method;
+        }
+      }
+    }
+    return target;
+  }
+
   private static Field[] getAllFields(Class<?> clazz) {
     return AccessController.doPrivileged(
         (PrivilegedAction<Field[]>)
@@ -5193,6 +5251,9 @@ public class BTraceUtils {
       return getField(clazz, name, throwException);
     }
 
+    public static Method method(Class clazz, String name, boolean throwException) {
+      return getMethod(clazz, name, throwException);
+    }
     /**
      * Returns a <code>Field</code> object that reflects the specified declared field of the class
      * or interface represented by the given <code>Class</code> object. The <code>name</code>
@@ -5206,7 +5267,9 @@ public class BTraceUtils {
     public static Field field(Class clazz, String name) {
       return field(clazz, name, true);
     }
-
+    public static Method method(Class clazz, String name) {
+      return method(clazz, name, true);
+    }
     /**
      * Returns a <code>Field</code> object that reflects the specified declared field of the class
      * or interface represented by the given <code>Class</code> object. The <code>name</code>
